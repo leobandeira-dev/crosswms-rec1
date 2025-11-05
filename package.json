@@ -7,7 +7,10 @@
     "dev:server": "tsx server/minimal-server.ts",
     "dev:client": "vite --host 0.0.0.0 --port 8080",
     "dev": "tsx server/minimal-server.ts",
-    "build": "vite build"
+    "build": "vite build",
+    "start": "tsx server/production-server.ts",
+    "start:prod": "tsx server/production-server.ts",
+    "preview": "vite preview --host 0.0.0.0 --port 8080"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -87,5 +90,8 @@
     "tsx": "^4.19.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.14"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

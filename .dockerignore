@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+dist/**/.map
+.git
+.gitignore
+.env
+.env.*
+client/node_modules
+src_legacy
+backup_legacy
+data
+docs
+**/*.md
+**/*.log
+**/*.tgz
+ngrok*

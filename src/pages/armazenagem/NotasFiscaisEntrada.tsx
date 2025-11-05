@@ -1376,6 +1376,22 @@ useEffect(() => {
 
       const { res, json } = await callApi();
       if (!res.ok) {
+        if (res.status === 402) {
+          // Saldo insuficiente: NF-e antiga ou crédito necessário. Usar fallback alternativo.
+          alert('Saldo insuficiente na API Meu Danfe (402). Tentando via integração alternativa.');
+          // Pequena pausa para evitar múltiplas requisições seguidas
+          await new Promise(r => setTimeout(r, 600));
+          try {
+            await fetchXmlFromMeuDanfeBackend(chave);
+          } catch (e) {
+            console.error('[MeuDanfe] Fallback backend falhou:', e);
+          }
+          return;
+        }
+        if (res.status === 401 || res.status === 403) {
+          alert('Api-Key não informada/ inválida ou substituída (401/403). Verifique VITE_MEUDANFE_API_KEY.');
+          return;
+        }
         alert(`Erro HTTP na API Meu Danfe: ${res.status}`);
         return;
       }
