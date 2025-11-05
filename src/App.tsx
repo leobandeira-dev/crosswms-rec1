@@ -10,7 +10,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Router>
+        <Router base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <SimpleRouter />
         </Router>
       </AuthProvider>
