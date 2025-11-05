@@ -1160,26 +1160,17 @@ useEffect(() => {
     try {
       console.log(`[Frontend] Iniciando busca Logística da Informação para: ${formData.chave_nota_fiscal}`);
       
-      // Get authentication token from localStorage
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Token de autenticação não encontrado');
-      }
-
       const response = await fetch('/api/xml/fetch-from-logistica', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chaveNotaFiscal: formData.chave_nota_fiscal
+          chaveNotaFiscal: formData.chave_nota_fiscal,
+          cnpj: '34579341000185',
+          token: '5K7WUNCGES1GNIP6DW65JAIW54H111'
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
-      }
+      console.log('[Frontend] HTTP Status da API Logística:', response.status);
 
       const result = await response.json();
       
@@ -1189,6 +1180,11 @@ useEffect(() => {
         hasXml: !!result.xml_content,
         source: result.source
       });
+
+      if (!response.ok) {
+        alert(`Erro HTTP na API Logística: ${response.status}`);
+        return;
+      }
 
       // Log básico para debug
       console.log('[DEBUG] Result completo:', result);
@@ -1347,6 +1343,82 @@ useEffect(() => {
         title: "❌ Erro na API Logística da Informação",
         description: error.message || 'Erro ao conectar com a API Logística da Informação'
       });
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  // Integração com Meu Danfe: PUT /fd/add/{Chave-Acesso}
+  const fetchNFeWithMeuDanfe = async () => {
+    const chave = formData.chave_nota_fiscal?.trim();
+    if (!chave || chave.length !== 44) {
+      alert('Por favor, insira uma chave válida de 44 dígitos');
+      return;
+    }
+
+    setIsApiLoading(true);
+    try {
+      const apiKey = (import.meta as any).env?.VITE_MEUDANFE_API_KEY || '05077f2a-0bc0-42a5-9ee8-4eff64b5c642';
+      const url = `https://api.meudanfe.com.br/v2/fd/add/${chave}`;
+
+      const callApi = async () => {
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Api-Key': apiKey,
+            'Accept': 'application/json'
+          }
+        });
+        const json = await res.json();
+        console.log('[MeuDanfe] Resposta:', res.status, json);
+        return { res, json };
+      };
+
+      const { res, json } = await callApi();
+      if (!res.ok) {
+        alert(`Erro HTTP na API Meu Danfe: ${res.status}`);
+        return;
+      }
+
+      const status = json?.status;
+      const statusMessage = json?.statusMessage || '';
+
+      if (status === 'WAITING' || status === 'SEARCHING') {
+        await new Promise(r => setTimeout(r, 1100));
+        const { res: res2, json: json2 } = await callApi();
+        const status2 = json2?.status;
+        const msg2 = json2?.statusMessage || '';
+
+        if (status2 === 'OK') {
+          alert('NFe adicionada com sucesso ao Meu Danfe (status OK).');
+          // Aguardar um pouco para evitar bloqueio por múltiplas requisições e garantir indexação
+          await new Promise(r => setTimeout(r, 1200));
+          await fetchXmlFromMeuDanfeAPI(chave);
+        } else if (status2 === 'NOT_FOUND') {
+          alert('NFe não encontrada no Meu Danfe.');
+        } else if (status2 === 'ERROR') {
+          alert(`Erro Meu Danfe: ${msg2 || 'Falha ao consultar'}`);
+        } else {
+          alert(`Solicitação em andamento: ${status2 || 'desconhecido'}. Tente novamente após alguns segundos.`);
+        }
+        return;
+      }
+
+      if (status === 'OK') {
+        alert('NFe adicionada com sucesso ao Meu Danfe (status OK).');
+        // Após confirmar que a NFe foi adicionada, baixar XML diretamente da Área do Cliente
+        await new Promise(r => setTimeout(r, 1200));
+        await fetchXmlFromMeuDanfeAPI(chave);
+      } else if (status === 'NOT_FOUND') {
+        alert('NFe não encontrada no Meu Danfe.');
+      } else if (status === 'ERROR') {
+        alert(`Erro Meu Danfe: ${statusMessage || 'Falha ao consultar'}`);
+      } else {
+        alert(`Status Meu Danfe: ${status || 'desconhecido'}`);
+      }
+    } catch (error) {
+      console.error('[MeuDanfe] Erro na integração:', error);
+      alert('Erro ao conectar à API Meu Danfe. Verifique sua conexão e tente novamente.');
     } finally {
       setIsApiLoading(false);
     }
@@ -1523,6 +1595,212 @@ useEffect(() => {
       } else {
         alert('Por favor, selecione apenas arquivos XML baixados do meudanfe.com.br');
       }
+    }
+  };
+
+  // Process XML content received as text (e.g., via backend scraping)
+  const processXMLContent = async (xmlText: string) => {
+    try {
+      setIsProcessing(true);
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+      const extractedData = {
+        // Dados da Nota Fiscal
+        chave_nota_fiscal: extractNFeKey(xmlDoc) || formData.chave_nota_fiscal || '',
+        data_hora_emissao: getXMLValue(xmlDoc, 'dhEmi') || '',
+        numero_nota: getXMLValue(xmlDoc, 'nNF') || '',
+        serie_nota: getXMLValue(xmlDoc, 'serie') || '',
+        natureza_operacao: getXMLValue(xmlDoc, 'natOp') || '',
+        operacao: sharedFields.operacao || 'Entrada',
+        cliente_retira: sharedFields.cliente_retira || 'Não',
+
+        // Dados do Emitente
+        emitente_cnpj: getXMLValue(xmlDoc, 'emit CNPJ') || '',
+        emitente_razao_social: getXMLValue(xmlDoc, 'emit xNome') || '',
+        emitente_telefone: getXMLValue(xmlDoc, 'enderEmit fone') || '',
+        emitente_uf: getXMLValue(xmlDoc, 'enderEmit UF') || '',
+        emitente_cidade: getXMLValue(xmlDoc, 'enderEmit xMun') || '',
+        emitente_bairro: getXMLValue(xmlDoc, 'enderEmit xBairro') || '',
+        emitente_endereco: getXMLValue(xmlDoc, 'enderEmit xLgr') || '',
+        emitente_numero: getXMLValue(xmlDoc, 'enderEmit nro') || '',
+        emitente_cep: getXMLValue(xmlDoc, 'enderEmit CEP') || '',
+
+        // Dados do Destinatário
+        destinatario_cnpj: getXMLValue(xmlDoc, 'dest CNPJ') || getXMLValue(xmlDoc, 'dest CPF') || '',
+        destinatario_razao_social: getXMLValue(xmlDoc, 'dest xNome') || '',
+        destinatario_telefone: getXMLValue(xmlDoc, 'enderDest fone') || '',
+        destinatario_uf: getXMLValue(xmlDoc, 'enderDest UF') || '',
+        destinatario_cidade: getXMLValue(xmlDoc, 'enderDest xMun') || '',
+        destinatario_bairro: getXMLValue(xmlDoc, 'enderDest xBairro') || '',
+        destinatario_endereco: getXMLValue(xmlDoc, 'enderDest xLgr') || '',
+        destinatario_numero: getXMLValue(xmlDoc, 'enderDest nro') || '',
+        destinatario_cep: getXMLValue(xmlDoc, 'enderDest CEP') || '',
+
+        // Informações Adicionais
+        quantidade_volumes: getXMLValue(xmlDoc, 'vol qVol') || getXMLValue(xmlDoc, 'transp qVol') || '',
+        valor_nota_fiscal: getXMLValue(xmlDoc, 'ICMSTot vNF') || '',
+        peso_bruto: getXMLValue(xmlDoc, 'vol pesoB') || '',
+        informacoes_complementares: getXMLValue(xmlDoc, 'infAdic infCpl') || '',
+        numero_pedido: getXMLValue(xmlDoc, 'det prod xPed') || '',
+        tipo_frete: getXMLValue(xmlDoc, 'transp modFrete') || sharedFields.tipo_frete || 'CIF',
+        custo_extra: sharedFields.custo_extra || ''
+      };
+
+      setFormData(extractedData);
+
+      const processedInvoice = {
+        ...extractedData,
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        data_processamento: new Date().toISOString(),
+        processedAt: new Date().toISOString(),
+        operacao: extractedData.operacao || sharedFields.operacao,
+        cliente_retira: extractedData.cliente_retira || sharedFields.cliente_retira,
+        tipo_frete: extractedData.tipo_frete || sharedFields.tipo_frete,
+        custo_extra: extractedData.custo_extra || sharedFields.custo_extra,
+        status: 'pendente'
+      };
+
+      const existingVolumeData = batchVolumeData.find(item => item.numeroNota === extractedData.numero_nota);
+      if (!existingVolumeData) {
+        const quantidadeVolumes = parseInt(extractedData.quantidade_volumes || '1') || 1;
+        const volumes = Array.from({ length: quantidadeVolumes }, (_, index) => ({
+          volume: index + 1,
+          altura: 0,
+          largura: 0,
+          comprimento: 0,
+          m3: 0
+        }));
+
+        const notaVolumeData: NotaVolumeData = {
+          notaId: processedInvoice.id,
+          numeroNota: extractedData.numero_nota,
+          volumes: volumes,
+          totalM3: 0,
+          pesoTotal: parseFloat(extractedData.peso_bruto || '0') || 0
+        };
+        setBatchVolumeData(prev => [...prev, notaVolumeData]);
+      }
+
+      setBatchInvoices(prev => [...prev, processedInvoice]);
+
+      const existingProcessed = JSON.parse(localStorage.getItem('processedInvoices') || '[]');
+      const updatedProcessed = [...existingProcessed, processedInvoice];
+      localStorage.setItem('processedInvoices', JSON.stringify(updatedProcessed));
+      setProcessedInvoices(updatedProcessed);
+
+      setShowSuccessAnimation(true);
+      setTimeout(() => setShowSuccessAnimation(false), 3000);
+
+      alert('XML recebido do Meu Danfe e processado com sucesso!');
+    } catch (error) {
+      console.error('[MeuDanfe] Falha ao processar XML:', error);
+      alert('Erro ao processar o conteúdo XML retornado.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Fetch XML via backend scraper endpoint and process it
+  const fetchXmlFromMeuDanfeBackend = async (overrideKey?: string) => {
+    const chave = (overrideKey || formData.chave_nota_fiscal || '').trim();
+    if (!chave || chave.length !== 44) {
+      alert('Por favor, insira uma chave válida de 44 dígitos');
+      return;
+    }
+
+    try {
+      console.log('[Frontend] Solicitando XML via backend scraper Meu Danfe para chave:', chave);
+      const response = await fetch('/api/xml/fetch-from-meudanfe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chaveNotaFiscal: chave })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('[Frontend] Resposta do scraper Meu Danfe:', result);
+
+      if (result.success && result.xml_content) {
+        await processXMLContent(result.xml_content);
+      } else {
+        alert(result.error || 'Não foi possível obter o XML via Meu Danfe');
+      }
+    } catch (error) {
+      console.error('[MeuDanfe] Erro ao buscar XML via backend:', error);
+      alert('Erro ao conectar ao backend para obter o XML do Meu Danfe.');
+    }
+  };
+
+  // Extract XML string from variable JSON response shapes from Meu Danfe
+  const extractXmlFromMeuDanfeResponse = (json: any): string | null => {
+    if (!json) return null;
+    const candidates: any[] = [
+      json?.xml,
+      json?.xml_content,
+      json?.content,
+      json?.xmlText,
+      json?.data?.xml,
+      json?.data?.xml_content,
+      json?.payload?.xml
+    ];
+    for (const val of candidates) {
+      if (typeof val === 'string' && val.includes('<?xml')) return val;
+    }
+    // Fallback: scan all string fields
+    try {
+      for (const [key, value] of Object.entries(json)) {
+        if (typeof value === 'string' && value.includes('<?xml')) return value;
+        if (typeof value === 'object' && value) {
+          const nested = extractXmlFromMeuDanfeResponse(value);
+          if (nested) return nested;
+        }
+      }
+    } catch {}
+    return null;
+  };
+
+  // Official Meu Danfe GET to download XML from Customer Area
+  const fetchXmlFromMeuDanfeAPI = async (overrideKey?: string) => {
+    const chave = (overrideKey || formData.chave_nota_fiscal || '').trim();
+    if (!chave || chave.length !== 44) {
+      alert('Por favor, insira uma chave válida de 44 dígitos');
+      return;
+    }
+
+    try {
+      const apiKey = (import.meta as any).env?.VITE_MEUDANFE_API_KEY || '05077f2a-0bc0-42a5-9ee8-4eff64b5c642';
+      const url = `https://api.meudanfe.com.br/v2/fd/get/xml/${chave}`;
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Api-Key': apiKey,
+          'Accept': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        throw new Error(`Erro HTTP Meu Danfe GET: ${res.status}`);
+      }
+
+      const json = await res.json();
+      console.log('[MeuDanfe] GET xml response:', json);
+      const xml = extractXmlFromMeuDanfeResponse(json);
+      if (xml && xml.includes('<?xml')) {
+        await processXMLContent(xml);
+      } else {
+        alert('Resposta do Meu Danfe não contém XML. Tentando fallback...');
+        // Optional robustness: fallback ao backend scraper
+        await fetchXmlFromMeuDanfeBackend(chave);
+      }
+    } catch (error) {
+      console.error('[MeuDanfe] Erro no GET xml:', error);
+      alert('Erro ao baixar o XML via Meu Danfe. Tentando fallback...');
+      await fetchXmlFromMeuDanfeBackend(chave);
     }
   };
 
@@ -2849,8 +3127,10 @@ useEffect(() => {
                       onClick={() => {
                         const keys = formData.chave_nota_fiscal.split(',').map(key => key.trim()).filter(key => key.length === 44);
                         if (keys.length === 1) {
-                          fetchXmlWithNSDocs();
+                          // Nova integração: Meu Danfe
+                          fetchNFeWithMeuDanfe();
                         } else if (keys.length > 1) {
+                          // Mantém fluxo existente para múltiplas chaves
                           processBatchNSDocsKeys(keys);
                         } else {
                           alert('Por favor, insira pelo menos uma chave válida de 44 dígitos');

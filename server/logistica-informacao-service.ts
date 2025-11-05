@@ -2,8 +2,9 @@
  * Logística da Informação SOAP Service
  * 
  * Implementa integração com a API SOAP da Logística da Informação
- * para consulta de NFe usando SOAP 1.2
+ * para consulta de NFe usando SOAP 1.1 (text/xml + SOAPAction)
  */
+import { DOMParser } from 'xmldom';
 
 export interface LogisticaInformacaoResponse {
   success: boolean;
@@ -19,7 +20,7 @@ export interface LogisticaInformacaoResponse {
 export class LogisticaInformacaoService {
   private cnpj: string;
   private token: string;
-  private baseUrl = 'http://ws.logisticadainformacao.srv.br/consultanfe/consultanfe.asmx';
+  private baseUrl = 'https://ws.logisticadainformacao.srv.br/consultanfe/consultanfe.asmx';
 
   constructor(cnpj: string, token: string) {
     this.cnpj = cnpj;
@@ -27,7 +28,7 @@ export class LogisticaInformacaoService {
   }
 
   /**
-   * Consulta NFe via SOAP 1.2
+   * Consulta NFe via SOAP 1.1
    */
   async fetchNFeXML(chaveNotaFiscal: string): Promise<LogisticaInformacaoResponse> {
     try {
@@ -40,8 +41,8 @@ export class LogisticaInformacaoService {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/soap+xml; charset=utf-8',
-          'SOAPAction': 'http://tempuri.org/ConsultaNFe'
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"http://tempuri.org/ConsultaNFe"'
         },
         body: soapEnvelope
       });
@@ -68,27 +69,27 @@ export class LogisticaInformacaoService {
   }
 
   /**
-   * Cria o envelope SOAP 1.2 para consulta NFe
+   * Cria o envelope SOAP 1.1 para consulta NFe
    */
   private createSOAPEnvelope(chaveNotaFiscal: string): string {
     return `<?xml version="1.0" encoding="utf-8"?>
-<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-                 xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
-                 xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
-  <soap12:Body>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+               xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
     <ConsultaNFe xmlns="http://tempuri.org/">
       <CNPJ>${this.cnpj}</CNPJ>
       <Token>${this.token}</Token>
       <chDOC>${chaveNotaFiscal}</chDOC>
     </ConsultaNFe>
-  </soap12:Body>
-</soap12:Envelope>`;
+  </soap:Body>
+</soap:Envelope>`;
   }
 
   /**
    * Processa a resposta SOAP e extrai os dados da NFe
    */
-  private parseSOAPResponse(responseText: string): LogisticaInformacaoResponse {
+  private async parseSOAPResponse(responseText: string): Promise<LogisticaInformacaoResponse> {
     try {
       // Verificar se há erro na resposta SOAP
       if (responseText.includes('faultstring') || responseText.includes('soap:Fault')) {
@@ -113,7 +114,7 @@ export class LogisticaInformacaoService {
       }
 
       // Extrair o resultado da consulta
-      const resultMatch = responseText.match(/<ConsultaNFeResult>(.*?)<\/ConsultaNFeResult>/);
+      const resultMatch = responseText.match(/<ConsultaNFeResult>([\s\S]*?)<\/ConsultaNFeResult>/);
       if (!resultMatch) {
         return {
           success: false,
@@ -123,10 +124,11 @@ export class LogisticaInformacaoService {
         };
       }
 
-      const xmlContent = resultMatch[1];
+      const rawContent = resultMatch[1];
+      const xmlContent = this.decodeXmlEntities(rawContent);
       
       // Verificar se o XML está vazio ou contém erro
-      if (!xmlContent || xmlContent.trim() === '' || xmlContent.includes('erro')) {
+      if (!xmlContent || xmlContent.trim() === '' || xmlContent.toLowerCase().includes('erro')) {
         return {
           success: false,
           error: 'NFe não encontrada ou XML vazio',
@@ -136,7 +138,6 @@ export class LogisticaInformacaoService {
       }
 
       // Parsear o XML da NFe
-      const { DOMParser } = await import('xmldom');
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
       
@@ -169,6 +170,18 @@ export class LogisticaInformacaoService {
         source: 'logistica_soap'
       };
     }
+  }
+
+  /**
+   * Decodifica entidades XML escapadas (&lt; &gt; &amp; &quot; &#39;)
+   */
+  private decodeXmlEntities(text: string): string {
+    return text
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
   }
 
   /**

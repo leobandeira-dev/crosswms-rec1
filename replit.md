@@ -24,8 +24,8 @@ Language preference: All feedback and communication must always be in Portuguese
 - **Build**: Vite (development), esbuild (production)
 
 ### Database
-- **Primary**: PostgreSQL (Neon serverless)
-- **Connection**: @neondatabase/serverless (connection pooling)
+- **Primary**: Banco de dados genérico (configurável - PostgreSQL, MySQL, SQLite, MongoDB)
+- **Connection**: Configuração flexível baseada em variáveis de ambiente
 - **Schema Management**: Drizzle Kit
 - **Design**: Modular schema (logistics, core)
 - **Multi-tenancy**: 3-level hierarchical system (`grupo_empresarial_id`, `empresa_matriz_id`, `filial_transportador`), with data isolation based on company ownership and user type.
@@ -48,7 +48,7 @@ Language preference: All feedback and communication must always be in Portuguese
 
 ## External Dependencies
 
-- **@neondatabase/serverless**: PostgreSQL database connectivity.
+- **Banco de Dados**: Configuração genérica suportando PostgreSQL, MySQL, SQLite e MongoDB (dependências a serem instaladas conforme escolha)
 - **drizzle-orm**: Type-safe database operations.
 - **@tanstack/react-query**: Server state management.
 - **@radix-ui/react-***: UI component library.

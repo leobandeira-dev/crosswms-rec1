@@ -135,3 +135,74 @@ O projeto está configurado para rodar no Replit com:
 
 **Desenvolvido por Leonardo Bandeira**  
 **CrossWMS © 2025 - Sistema de Gestão Logística**
+## Integração: Logística da Informação (Consulta NFe)
+
+Endpoint backend para consultar o XML da NFe via API SOAP da Logística da Informação.
+
+- URL: `POST /api/xml/fetch-from-logistica`
+- Headers: `Content-Type: application/json`
+- Body:
+  - `chaveNotaFiscal` (string, obrigatório, 44 dígitos)
+  - `cnpj` (string, opcional)
+  - `token` (string, opcional)
+
+Se `cnpj`/`token` não forem enviados no corpo, o backend usa as variáveis de ambiente `LOGISTICA_CNPJ` e `LOGISTICA_INFORMACAO_TOKEN`. Caso não existam, usa valores padrão de desenvolvimento.
+
+### Exemplo de requisição (PowerShell / Windows)
+
+Para evitar problemas de cotações do PowerShell, use o `cmd` com `curl.exe`:
+
+```
+cmd /c "echo {\"chaveNotaFiscal\":\"00000000000000000000000000000000000000000000\",\"cnpj\":\"12345678000199\",\"token\":\"SEU_TOKEN\"} | curl.exe -s -X POST http://localhost:3002/api/xml/fetch-from-logistica -H \"Content-Type: application/json\" --data-binary @-"
+```
+
+### Resposta
+
+Retorna `200 OK` com JSON:
+
+```
+{
+  "success": true | false,
+  "data": { ... },
+  "xml_content": "<xml...>",
+  "error": "Mensagem de erro opcional",
+  "nfe_not_found": true | false,
+  "api_error": true | false,
+  "invalid_xml": true | false,
+  "source": "logistica_soap"
+}
+```
+
+Observação: Mesmo em falhas esperadas da API (NFe não encontrada, SOAP fault), o backend retorna `200` com `success: false` e os indicadores (`nfe_not_found`, `api_error`, etc.). `500` só ocorre em exceções inesperadas (ex.: erro de build, dependência ausente).
+
+### Configuração (.env)
+
+Adicione ao `.env`:
+
+```
+LOGISTICA_CNPJ=00000000000000
+LOGISTICA_INFORMACAO_TOKEN=SEU_TOKEN_AQUI
+```
+
+### Solução de problemas (evitar 500)
+
+- Dependência do parser XML:
+  - O serviço usa `xmldom`. Certifique-se que a dependência está instalada e que o serviço não usa `await import('xmldom')` fora de função `async`.
+- Duplicidade de rotas:
+  - Garanta que exista apenas uma rota `POST /api/xml/fetch-from-logistica`. Remova mocks com funções inexistentes.
+- Formatação do JSON:
+  - Envios via PowerShell com aspas podem quebrar o parse do body. Use o exemplo com `cmd` e `curl.exe`.
+- Credenciais:
+  - Sem `cnpj`/`token` válidos, a API remota pode retornar fault. O backend captura e responde com `success: false` (200), evitando 500.
+
+### Uso no frontend
+
+Envie o body com `chaveNotaFiscal`, `cnpj` e `token` ou configure as variáveis no backend. Exemplo:
+
+```ts
+await fetch('/api/xml/fetch-from-logistica', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ chaveNotaFiscal, cnpj, token })
+});
+```

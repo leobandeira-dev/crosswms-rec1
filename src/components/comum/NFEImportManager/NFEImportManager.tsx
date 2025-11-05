@@ -162,17 +162,23 @@ const NFEImportManager: React.FC<NFEImportManagerProps> = ({
   };
 
   const fetchXmlWithLogistica = async (key: string) => {
-    const token = localStorage.getItem('token');
     const response = await fetch('/api/xml/fetch-from-logistica', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ chaveNotaFiscal: key })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chaveNotaFiscal: key,
+        cnpj: '34579341000185',
+        token: '5K7WUNCGES1GNIP6DW65JAIW54H111'
+      })
     });
 
-    return await response.json();
+    console.log('[Frontend] HTTP Status (Logística):', response.status);
+
+    const json = await response.json();
+    if (!response.ok) {
+      throw new Error(`Erro HTTP ${response.status}: ${json?.error || 'Falha na API Logística'}`);
+    }
+    return json;
   };
 
   // Função auxiliar para adicionar nota importada com verificação de duplicatas

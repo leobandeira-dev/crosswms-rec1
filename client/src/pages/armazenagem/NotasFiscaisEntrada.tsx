@@ -1146,33 +1146,24 @@ const NotasFiscaisEntrada = () => {
     }
 
     setIsApiLoading(true);
-    
+
     try {
       console.log(`[Frontend] Iniciando busca Logística da Informação para: ${formData.chave_nota_fiscal}`);
-      
-      // Get authentication token from localStorage
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Token de autenticação não encontrado');
-      }
 
       const response = await fetch('/api/xml/fetch-from-logistica', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chaveNotaFiscal: formData.chave_nota_fiscal
+          chaveNotaFiscal: formData.chave_nota_fiscal,
+          cnpj: '34579341000185',
+          token: '5K7WUNCGES1GNIP6DW65JAIW54H111'
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
-      }
+      console.log('[Frontend] HTTP Status da API Logística:', response.status);
 
       const result = await response.json();
-      
+
       console.log('[Frontend] Resposta da API Logística da Informação:', {
         success: result.success,
         hasData: !!result.data,
@@ -1180,15 +1171,19 @@ const NotasFiscaisEntrada = () => {
         source: result.source
       });
 
+      if (!response.ok) {
+        alert(`Erro HTTP na API Logística: ${response.status}`);
+        return;
+      }
+
       if (result.success && result.data) {
-        // Map API response to form fields properly
+        // Mapear dados no formulário
         const mappedData = {
           chave_nota_fiscal: result.data.chave_nota_fiscal,
           numero_nota: result.data.numero_nota,
           serie_nota: result.data.serie_nota,
           data_hora_emissao: result.data.data_hora_emissao,
           natureza_operacao: result.data.natureza_operacao,
-          // Emitente fields
           emitente_cnpj: result.data.emitente_cnpj,
           emitente_razao_social: result.data.emitente_razao_social,
           emitente_telefone: result.data.emitente_telefone,
@@ -1198,7 +1193,6 @@ const NotasFiscaisEntrada = () => {
           emitente_endereco: result.data.emitente_endereco,
           emitente_numero: result.data.emitente_numero,
           emitente_cep: result.data.emitente_cep,
-          // Destinatário fields  
           destinatario_cnpj: result.data.destinatario_cnpj,
           destinatario_razao_social: result.data.destinatario_razao_social,
           destinatario_telefone: result.data.destinatario_telefone,
@@ -1208,19 +1202,15 @@ const NotasFiscaisEntrada = () => {
           destinatario_endereco: result.data.destinatario_endereco,
           destinatario_numero: result.data.destinatario_numero,
           destinatario_cep: result.data.destinatario_cep,
-          // Financial data
           valor_nota_fiscal: result.data.valor_nota_fiscal,
           valor_produtos: result.data.valor_produtos,
-          // Volume data
           quantidade_volumes: result.data.quantidade_volumes,
           peso_bruto: result.data.peso_bruto,
           peso_liquido: result.data.peso_liquido,
-          // Additional info
           informacoes_complementares: result.data.informacoes_complementares,
           numero_pedido: result.data.numero_pedido
         };
 
-        // Populate form with mapped data
         setFormData(prevData => ({
           ...prevData,
           ...mappedData
@@ -1231,29 +1221,13 @@ const NotasFiscaisEntrada = () => {
           description: `Dados da NFe ${result.data.numero_nota} carregados com sucesso.`
         });
 
-        // Store data in sessionStorage for other components
         sessionStorage.setItem('nfeData', JSON.stringify(result.data));
-        
-      } else if (result.nfe_not_found) {
-        toast({
-          title: "ℹ️ NFe não encontrada",
-          description: "A NFe não foi encontrada na base da Logística da Informação. Tente com outra API ou upload manual."
-        });
-      } else if (result.invalid_xml) {
-        toast({
-          title: "⚠️ XML inválido",
-          description: "O XML retornado não é válido. Tente com outra API."
-        });
       } else {
-        throw new Error(result.error || 'Erro desconhecido na API Logística da Informação');
+        alert(result.error || 'Erro ao buscar XML na API Logística');
       }
-    } catch (error: any) {
-      console.error('[Frontend] Erro na busca Logística da Informação:', error);
-      
-      toast({
-        title: "❌ Erro na API Logística da Informação",
-        description: error.message || 'Erro ao conectar com a API Logística da Informação'
-      });
+    } catch (error) {
+      console.error('Erro ao buscar XML via Logística da Informação:', error);
+      alert('Erro na conexão com a API de Logística da Informação. Verifique sua rede e tente novamente.');
     } finally {
       setIsApiLoading(false);
     }
@@ -1335,6 +1309,78 @@ const NotasFiscaisEntrada = () => {
         title: "❌ Erro na API CrossXML",
         description: error.message || 'Erro ao conectar com a API CrossXML'
       });
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  // Integração com Meu Danfe: PUT /fd/add/{Chave-Acesso}
+  const fetchNFeWithMeuDanfe = async () => {
+    const chave = formData.chave_nota_fiscal?.trim();
+    if (!chave || chave.length !== 44) {
+      alert('Por favor, insira uma chave válida de 44 dígitos');
+      return;
+    }
+
+    setIsApiLoading(true);
+    try {
+      const apiKey = (import.meta as any).env?.VITE_MEUDANFE_API_KEY || '05077f2a-0bc0-42a5-9ee8-4eff64b5c642';
+      const url = `https://api.meudanfe.com.br/v2/fd/add/${chave}`;
+
+      const callApi = async () => {
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Api-Key': apiKey,
+            'Accept': 'application/json'
+          }
+        });
+        const json = await res.json();
+        console.log('[MeuDanfe] Resposta:', res.status, json);
+        return { res, json };
+      };
+
+      // Primeira solicitação
+      const { res, json } = await callApi();
+      if (!res.ok) {
+        alert(`Erro HTTP na API Meu Danfe: ${res.status}`);
+        return;
+      }
+
+      const status = json?.status;
+      const statusMessage = json?.statusMessage || '';
+
+      // Aguardar e consultar novamente se estiver em andamento
+      if (status === 'WAITING' || status === 'SEARCHING') {
+        await new Promise(r => setTimeout(r, 1100));
+        const { res: res2, json: json2 } = await callApi();
+        const status2 = json2?.status;
+        const msg2 = json2?.statusMessage || '';
+
+        if (status2 === 'OK') {
+          alert('NFe adicionada com sucesso ao Meu Danfe (status OK).');
+        } else if (status2 === 'NOT_FOUND') {
+          alert('NFe não encontrada no Meu Danfe.');
+        } else if (status2 === 'ERROR') {
+          alert(`Erro Meu Danfe: ${msg2 || 'Falha ao consultar'}`);
+        } else {
+          alert(`Solicitação em andamento: ${status2 || 'desconhecido'}. Tente novamente após alguns segundos.`);
+        }
+        return;
+      }
+
+      if (status === 'OK') {
+        alert('NFe adicionada com sucesso ao Meu Danfe (status OK).');
+      } else if (status === 'NOT_FOUND') {
+        alert('NFe não encontrada no Meu Danfe.');
+      } else if (status === 'ERROR') {
+        alert(`Erro Meu Danfe: ${statusMessage || 'Falha ao consultar'}`);
+      } else {
+        alert(`Status Meu Danfe: ${status || 'desconhecido'}`);
+      }
+    } catch (error) {
+      console.error('[MeuDanfe] Erro na integração:', error);
+      alert('Erro ao conectar à API Meu Danfe. Verifique sua conexão e tente novamente.');
     } finally {
       setIsApiLoading(false);
     }
@@ -2834,8 +2880,10 @@ const NotasFiscaisEntrada = () => {
                       onClick={() => {
                         const keys = formData.chave_nota_fiscal.split(',').map(key => key.trim()).filter(key => key.length === 44);
                         if (keys.length === 1) {
-                          fetchXmlWithNSDocs();
+                          // Substituição: usar a nova API Meu Danfe
+                          fetchNFeWithMeuDanfe();
                         } else if (keys.length > 1) {
+                          // Mantém fluxo atual para múltiplas chaves
                           processBatchNSDocsKeys(keys);
                         } else {
                           alert('Por favor, insira pelo menos uma chave válida de 44 dígitos');

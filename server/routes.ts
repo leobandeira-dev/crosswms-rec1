@@ -1749,7 +1749,7 @@ export function registerRoutes(app: Express): Server {
   // XML API Routes - Logística da Informação
   app.post("/api/xml/fetch-from-logistica", async (req, res) => {
     try {
-      const { chaveNotaFiscal } = req.body;
+      const { chaveNotaFiscal, cnpj: bodyCnpj, token: bodyToken } = req.body;
       
       if (!chaveNotaFiscal || chaveNotaFiscal.length !== 44) {
         return res.status(400).json({
@@ -1761,9 +1761,9 @@ export function registerRoutes(app: Express): Server {
 
       console.log(`[API] Tentativa de busca NFe: ${chaveNotaFiscal}`);
       
-      // Usar credenciais fornecidas
-      const cnpj = process.env.LOGISTICA_CNPJ || '34579341000185';
-      const token = process.env.LOGISTICA_INFORMACAO_TOKEN || '5K7WUNCGES1GNIP6DW65JAIW54H111';
+      // Usar credenciais fornecidas (prioriza valores do corpo da requisição)
+      const cnpj = bodyCnpj || process.env.LOGISTICA_CNPJ || '34579341000185';
+      const token = bodyToken || process.env.LOGISTICA_INFORMACAO_TOKEN || '5K7WUNCGES1GNIP6DW65JAIW54H111';
       
       console.log(`[API] Usando credenciais Logística: CNPJ ${cnpj.substring(0, 8)}...`);
 
@@ -1774,6 +1774,7 @@ export function registerRoutes(app: Express): Server {
       console.log(`[API] Fazendo consulta NFe com CNPJ: ${cnpj.substring(0, 8)}...`);
       const result = await service.fetchNFeXML(chaveNotaFiscal);
       
+      // Observação: result.success pode ser false mesmo com HTTP 200
       return res.json(result);
 
     } catch (error: any) {

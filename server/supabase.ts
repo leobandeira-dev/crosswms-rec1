@@ -39,7 +39,7 @@ export const db = drizzle(sql, { schema });
 // Exportar o schema para tipagem e validação
 export { schema };
 
-// Para operações que precisam do Drizzle, podemos usar o cliente Neon que já está configurado
+// Para operações que precisam do Drizzle, podemos usar a configuração genérica de banco de dados
 // no arquivo db.ts quando necessário
 
 // Função para testar a conexão com o Supabase
